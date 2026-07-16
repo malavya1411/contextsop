@@ -14,6 +14,7 @@ export type WorkflowDsl = {
     description: string;
     targetEnvironment?: string;
     estimatedDuration?: number;
+    sequentialExecution?: boolean;
   };
   variables: Array<{
     name: string;
@@ -112,6 +113,9 @@ export function isWorkflowDsl(value: unknown): value is WorkflowDsl {
     return false;
   }
   if (metadata.estimatedDuration !== undefined && typeof metadata.estimatedDuration !== "number") {
+    return false;
+  }
+  if (metadata.sequentialExecution !== undefined && typeof metadata.sequentialExecution !== "boolean") {
     return false;
   }
 

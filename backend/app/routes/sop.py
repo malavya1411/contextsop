@@ -1,6 +1,7 @@
 import os
 import threading
 import uuid
+from urllib.parse import urlparse
 
 import requests
 from flask import Blueprint, g, jsonify, request
@@ -247,3 +248,52 @@ def update_sop_details(sop_id: str):
             sops_db[sop_id]["description"] = dsl_payload.metadata.description
 
         return jsonify(status="success", message="SOP updated in local database.")
+
+
+ALLOWED_VERIFICATION_DOMAINS = {
+    "github.com",
+    "api.github.com",
+    "google.com",
+    "httpbin.org",
+    "status.payment-service.com",
+    "localhost",
+    "127.0.0.1",
+}
+
+
+@sop_bp.post("/verify")
+@require_auth
+def verify_endpoint():
+    """
+    SSRF-mitigated proxy to check status of a verification URL.
+    Restricts requests to pre-approved domains.
+    """
+    payload = request.get_json(silent=True) or {}
+    url = payload.get("url")
+    if not url:
+        return jsonify(error="Validation Error", message="URL is required."), 400
+
+    try:
+        parsed_url = urlparse(url)
+        domain = parsed_url.hostname
+        if not domain:
+            return jsonify(error="Validation Error", message="Invalid URL hostname."), 400
+
+        # Enforce domain whitelist check
+        if domain.lower() not in ALLOWED_VERIFICATION_DOMAINS and not domain.endswith(".status.payment-service.com"):
+            return jsonify(
+                error="Unauthorized Domain",
+                message=f"Verification domain '{domain}' is not in the approved whitelist."
+            ), 400
+
+        # Perform the verification check (with timeout)
+        res = requests.get(url, timeout=5)
+        return jsonify(
+            statusCode=res.status_code,
+            statusText=res.reason,
+            ok=res.status_code < 400
+        )
+    except requests.exceptions.RequestException as e:
+        return jsonify(error="Connection Failed", message=str(e)), 400
+    except Exception as e:
+        return jsonify(error="Internal Error", message=str(e)), 500

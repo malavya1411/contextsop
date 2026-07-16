@@ -47,6 +47,10 @@ def mock_get_side_effect(url, headers=None, **kwargs):
             mock_res.json.return_value = [mock_supabase_db[sop_id]]
         else:
             mock_res.json.return_value = []
+    elif "httpbin.org" in url:
+        mock_res.status_code = 200
+        mock_res.reason = "OK"
+        return mock_res
     else:
         mock_res.json.return_value = {}
 
@@ -345,4 +349,28 @@ def test_sop_migration_utility():
     assert validated.variables[0].default_value == "localhost"
     assert validated.steps[0].depends_on == ["step-2"]
     assert validated.steps[0].payload.command_string == "curl -s localhost"
+
+
+@patch("requests.post", side_effect=mock_post_side_effect)
+@patch("requests.get", side_effect=mock_get_side_effect)
+def test_sop_verify_endpoint(mock_get, mock_post, client, auth_headers):
+    # 1. Whitelisted domain (mocked via mock_get_side_effect for httpbin.org)
+    res = client.post(
+        "/api/v1/sop/verify",
+        json={"url": "https://httpbin.org/status/200"},
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+    assert res.json["statusCode"] == 200
+    assert res.json["ok"] is True
+
+    # 2. Non-whitelisted domain rejection
+    res_rejected = client.post(
+        "/api/v1/sop/verify",
+        json={"url": "https://malicious-internal-service.local/health"},
+        headers=auth_headers,
+    )
+    assert res_rejected.status_code == 400
+    assert "whitelist" in res_rejected.json["message"]
+
 

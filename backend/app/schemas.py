@@ -50,6 +50,7 @@ class WorkflowMetadata(BaseModel):
     description: str = Field(min_length=1, max_length=2_000)
     target_environment: str | None = Field(default=None, alias="targetEnvironment")
     estimated_duration: int | None = Field(default=None, alias="estimatedDuration", ge=1, le=1_440)
+    sequential_execution: bool | None = Field(default=True, alias="sequentialExecution")
 
 
 class WorkflowStepPayload(BaseModel):
