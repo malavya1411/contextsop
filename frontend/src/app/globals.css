@@ -8,6 +8,11 @@
   --color-accent-primary: var(--accent-primary);
   --color-accent-warning: var(--accent-warning);
   --color-text-muted: var(--text-muted);
+  --color-box-bg: var(--box-bg);
+  --color-box-text: var(--box-text);
+  --color-box-border: var(--box-border);
+  --color-box-line-numbers-bg: var(--box-line-numbers-bg);
+  --color-box-line-numbers-text: var(--box-line-numbers-text);
 }
 
 :root {
@@ -18,6 +23,13 @@
   --accent-primary: #10b981; /* emerald-500 */
   --accent-warning: #f59e0b; /* amber-500 */
   --text-muted: #64748b; /* slate-500 */
+
+  /* Workspace box styling in light mode */
+  --box-bg: #fafafa;
+  --box-text: #1e293b;
+  --box-border: #e2e8f0;
+  --box-line-numbers-bg: #f1f5f9;
+  --box-line-numbers-text: #94a3b8;
 
   /* Original landing page variables */
   --bg: #07111f;
@@ -42,6 +54,13 @@
   --accent-primary: #34d399; /* emerald-400 */
   --accent-warning: #fbbf24; /* amber-400 */
   --text-muted: #94a3b8; /* slate-400 */
+
+  /* Workspace box styling in dark mode */
+  --box-bg: #050e19;
+  --box-text: #eff6ff;
+  --box-border: #1c3148;
+  --box-line-numbers-bg: #030a12;
+  --box-line-numbers-text: #3d5874;
 }
 * {
   box-sizing: border-box;
@@ -814,3 +833,64 @@ button {
     transform: none;
   }
 }
+
+/* Custom Scrollbars */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--sidebar-border);
+  border-radius: 999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Animations */
+@keyframes borderPulse {
+  0%, 100% {
+    border-color: var(--sidebar-border);
+  }
+  50% {
+    border-color: var(--accent-primary);
+  }
+}
+
+.animate-border-pulse {
+  animation: borderPulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+.animate-float {
+  animation: float 4s ease-in-out infinite;
+}
+
+@keyframes gradientFlow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animate-gradient-flow {
+  background-size: 200% 200%;
+  animation: gradientFlow 3s ease infinite;
+}
+

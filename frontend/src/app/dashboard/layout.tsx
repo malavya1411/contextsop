@@ -41,7 +41,7 @@ export default function DashboardLayout({
   }, [pathname, setActiveWorkspace, pushNavigationHistory]);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground font-sans relative">
+    <div className="flex h-screen w-full overflow-hidden bg-background text-foreground font-sans relative">
       {/* Sidebar for desktop */}
       <Sidebar />
 

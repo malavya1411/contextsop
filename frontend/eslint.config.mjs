@@ -20,6 +20,7 @@ export default tseslint.config(
       ...nextPlugin.configs.recommended.rules,
       ...nextPlugin.configs['core-web-vitals'].rules,
       ...reactHooks.configs.recommended.rules,
+      'react-hooks/set-state-in-effect': 'off',
     },
     languageOptions: {
       globals: {

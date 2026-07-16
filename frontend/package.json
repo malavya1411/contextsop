@@ -26,12 +26,15 @@
     "zustand": "5.0.3"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@next/eslint-plugin-next": "^16.2.10",
     "@tailwindcss/postcss": "4.1.4",
     "@types/node": "22.15.2",
     "@types/react": "19.1.2",
     "@types/react-dom": "19.1.2",
     "eslint": "9.39.5",
     "eslint-config-next": "15.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^15.15.0",
     "prettier": "3.5.3",
     "tailwindcss": "4.1.4",
