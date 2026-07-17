@@ -212,6 +212,7 @@ export default function SopGenerator() {
           }}
           onProgress={handleProgress}
           onSuccess={handleShowSuccessToast}
+          onError={(msg) => setValidationError(msg)}
         />
       </section>
 

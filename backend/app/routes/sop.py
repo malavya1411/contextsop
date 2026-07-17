@@ -106,17 +106,29 @@ def run_generation(job_id: str, transcript: str, org_id: str, user_id: str, auth
             jobs[job_id]["error"] = str(e)
 
 
+def cleanup_old_jobs():
+    import time
+    cutoff = time.time() - 3600
+    with jobs_lock:
+        old = [k for k, v in jobs.items() if v.get("created_at", time.time()) < cutoff]
+        for k in old:
+            del jobs[k]
+
+
 @sop_bp.post("/generate")
 @require_auth
 def generate_sop():
     """
     Spawns background generator worker and returns a job tracking URL.
     """
+    cleanup_old_jobs()
+
     payload = GenerateRequest.model_validate(request.get_json(silent=True) or {})
     job_id = str(uuid.uuid4())
 
+    import time
     with jobs_lock:
-        jobs[job_id] = {"status": "pending", "sop_id": None, "error": None}
+        jobs[job_id] = {"status": "pending", "sop_id": None, "error": None, "created_at": time.time()}
 
     auth_header = request.headers.get("Authorization")
 

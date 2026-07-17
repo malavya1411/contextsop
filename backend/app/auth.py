@@ -1,8 +1,24 @@
+import base64
+import json
 import os
 from functools import wraps
 
 import requests
 from flask import g, jsonify, request
+
+
+def decode_jwt_payload(token):
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            return {}
+        payload_b64 = parts[1]
+        # Pad payload base64 string if necessary
+        payload_b64 += "=" * (-len(payload_b64) % 4)
+        payload_json = base64.b64decode(payload_b64).decode("utf-8")
+        return json.loads(payload_json)
+    except Exception:
+        return {}
 
 
 def require_auth(f):
@@ -42,10 +58,17 @@ def require_auth(f):
 
             user_data = response.json()
 
-            # Extract organization ID from JWT claims hook metadata (app_metadata or user_metadata)
+            # Decode the token directly to read custom JWT claims (e.g. org_id hook claim)
+            claims = decode_jwt_payload(token)
+
+            # Extract organization ID from JWT claims, app_metadata, or user_metadata
             app_meta = user_data.get("app_metadata", {})
             user_meta = user_data.get("user_metadata", {})
-            org_id = app_meta.get("org_id") or user_meta.get("org_id")
+            org_id = (
+                claims.get("org_id")
+                or app_meta.get("org_id")
+                or user_meta.get("org_id")
+            )
 
             if not org_id:
                 return (

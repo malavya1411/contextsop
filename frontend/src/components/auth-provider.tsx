@@ -26,6 +26,7 @@ type AuthContextType = {
   loading: boolean;
   signOut: () => Promise<void>;
   triggerReauth: () => void;
+  refresh: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -44,12 +45,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  const fetchUserData = async (currentUser: User) => {
+    try {
+      const { data: profileData, error: profileError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", currentUser.id)
+        .single();
+
+      if (profileError || !profileData) {
+        throw new Error("Failed to fetch user profile");
+      }
+
+      const { data: orgData, error: orgError } = await supabase
+        .from("organizations")
+        .select("*")
+        .eq("id", profileData.organization_id)
+        .single();
+
+      if (orgError || !orgData) {
+        throw new Error("Failed to fetch organization details");
+      }
+
+      setUser(currentUser);
+      setProfile(profileData as Profile);
+      setOrganization(orgData as Organization);
+    } catch (err) {
+      console.error("Error loading user context:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const refresh = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      await fetchUserData(session.user);
+    }
+  };
+
   useEffect(() => {
     let active = true;
 
-    async function fetchUserData(currentUser: User) {
+    async function fetchUserDataInit(currentUser: User) {
       try {
-        // Fetch profile
         const { data: profileData, error: profileError } = await supabase
           .from("profiles")
           .select("*")
@@ -60,7 +99,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           throw new Error("Failed to fetch user profile");
         }
 
-        // Fetch organization
         const { data: orgData, error: orgError } = await supabase
           .from("organizations")
           .select("*")
@@ -79,7 +117,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (err) {
         console.error("Error loading user context:", err);
         if (active) {
-          // If we fail to resolve profile data, reset auth state
           setUser(null);
           setProfile(null);
           setOrganization(null);
@@ -94,7 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
-        fetchUserData(session.user);
+        fetchUserDataInit(session.user);
       } else {
         setLoading(false);
       }
@@ -105,7 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN" && session?.user) {
-        fetchUserData(session.user);
+        fetchUserDataInit(session.user);
       } else if (event === "SIGNED_OUT") {
         setUser(null);
         setProfile(null);
@@ -128,7 +165,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Sync session check for active dashboard views
   useEffect(() => {
     if (pathname.startsWith("/dashboard") && !loading && !user) {
-      // Trigger login redirect if session is cleared in background
       router.push("/login");
     }
   }, [pathname, loading, user, router]);
@@ -201,7 +237,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, profile, organization, loading, signOut, triggerReauth }}
+      value={{ user, profile, organization, loading, signOut, triggerReauth, refresh }}
     >
       {children}
 
