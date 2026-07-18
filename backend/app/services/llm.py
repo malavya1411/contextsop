@@ -1,8 +1,8 @@
 import logging
 
 import tiktoken
-from openai import OpenAI
 
+from ..config import get_api_keys, get_llm_client_and_model
 from ..schemas import WorkflowDsl
 
 logger = logging.getLogger(__name__)
@@ -129,7 +129,7 @@ def truncate_transcript(text: str, max_tokens: int = 60000) -> str:
 
 def extract_sop_from_transcript(transcript: str, api_key: str) -> WorkflowDsl:
     """
-    Invokes OpenAI Chat Completions API with Structured Outputs to parse SOP from raw logs.
+    Invokes OpenAI Chat Completions API with JSON mode to parse SOP from raw logs.
     """
     if not api_key:
         raise ValueError("OpenAI API Key is required but was not provided.")
@@ -137,26 +137,46 @@ def extract_sop_from_transcript(transcript: str, api_key: str) -> WorkflowDsl:
     # 1. Truncate transcript to fit context window budget
     safe_transcript = truncate_transcript(transcript, max_tokens=60000)
 
-    # 2. Call OpenAI Chat Completions with response_format=WorkflowDsl
-    client = OpenAI(api_key=api_key)
+    import json
 
-    try:
-        completion = client.beta.chat.completions.parse(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": safe_transcript},
-            ],
-            response_format=WorkflowDsl,
-            temperature=0.1,
-        )
+    schema_dump = json.dumps(WorkflowDsl.model_json_schema())
+    detailed_system_prompt = (
+        SYSTEM_PROMPT + "\n\nYou MUST respond with a JSON object that strictly conforms "
+        f"to this JSON Schema:\n{schema_dump}"
+    )
 
-        parsed_dsl = completion.choices[0].message.parsed
-        if not parsed_dsl:
-            raise RuntimeError("OpenAI failed to parse the transcript into WorkflowDsl.")
+    # 2. Call OpenAI Chat Completions with response_format={"type": "json_object"}
+    # using fallback rotation
+    keys = get_api_keys(api_key)
+    if not keys:
+        raise ValueError("No valid API keys found in the provided configuration.")
 
-        return parsed_dsl
+    last_error = None
+    for key in keys:
+        try:
+            client, model_name = get_llm_client_and_model(key)
+            completion = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": detailed_system_prompt},
+                    {"role": "user", "content": safe_transcript},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.1,
+            )
 
-    except Exception as e:
-        logger.exception("Error during LLM SOP extraction parsing")
-        raise RuntimeError(f"LLM compilation failed: {str(e)}") from e
+            content = completion.choices[0].message.content
+            if not content:
+                raise RuntimeError("OpenAI returned an empty completion response.")
+
+            parsed_dsl = WorkflowDsl.model_validate_json(content)
+            return parsed_dsl
+
+        except Exception as e:
+            logger.warning(f"LLM SOP extraction failed with key starting with {key[:10]}...: {e}")
+            last_error = e
+
+    logger.exception("All API keys failed during LLM SOP extraction parsing")
+    raise RuntimeError(
+        f"LLM compilation failed (all keys exhausted): {str(last_error)}"
+    ) from last_error

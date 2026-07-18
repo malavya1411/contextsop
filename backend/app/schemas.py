@@ -1,4 +1,5 @@
 from enum import Enum
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -23,22 +24,73 @@ class WarningLevel(str, Enum):
 
 
 class WorkflowVariable(BaseModel):
-    name: str = Field(pattern=r"^[A-Z][A-Z0-9_]*$")
+    name: str = Field(min_length=1, max_length=100)
     label: str = Field(min_length=1, max_length=120)
     type: VariableType
     default_value: str = Field(alias="defaultValue", max_length=500)
-    validation_regex: str | None = Field(default=None, alias="validationRegex")
+    validation_regex: str = Field(default="", alias="validationRegex")
 
     @field_validator("name")
     @classmethod
     def validate_variable_name(cls, name: str) -> str:
+        import re
+
+        if not re.match(r"^[A-Z][A-Z0-9_]*$", name):
+            raise ValueError(
+                "Variable name must contain only uppercase alphanumeric characters and "
+                "underscores, and start with an uppercase letter."
+            )
         reserved_keywords = {
-            "if", "else", "while", "for", "return", "break", "continue", "import", "class", 
-            "try", "except", "catch", "true", "false", "null", "undefined", "and", "or", 
-            "not", "in", "is", "elif", "def", "lambda", "global", "nonlocal", "yield", 
-            "pass", "assert", "with", "as", "del", "raise", "finally", "async", "await",
-            "let", "const", "var", "function", "typeof", "instanceof", "void", "new", "delete",
-            "switch", "case", "default", "do", "throw"
+            "if",
+            "else",
+            "while",
+            "for",
+            "return",
+            "break",
+            "continue",
+            "import",
+            "class",
+            "try",
+            "except",
+            "catch",
+            "true",
+            "false",
+            "null",
+            "undefined",
+            "and",
+            "or",
+            "not",
+            "in",
+            "is",
+            "elif",
+            "def",
+            "lambda",
+            "global",
+            "nonlocal",
+            "yield",
+            "pass",
+            "assert",
+            "with",
+            "as",
+            "del",
+            "raise",
+            "finally",
+            "async",
+            "await",
+            "let",
+            "const",
+            "var",
+            "function",
+            "typeof",
+            "instanceof",
+            "void",
+            "new",
+            "delete",
+            "switch",
+            "case",
+            "default",
+            "do",
+            "throw",
         }
         if name.lower() in reserved_keywords:
             raise ValueError(f"Variable name '{name}' conflicts with a reserved keyword.")
@@ -48,32 +100,54 @@ class WorkflowVariable(BaseModel):
 class WorkflowMetadata(BaseModel):
     title: str = Field(min_length=1, max_length=180)
     description: str = Field(min_length=1, max_length=2_000)
-    target_environment: str | None = Field(default=None, alias="targetEnvironment")
-    estimated_duration: int | None = Field(default=None, alias="estimatedDuration", ge=1, le=1_440)
-    sequential_execution: bool | None = Field(default=True, alias="sequentialExecution")
+    target_environment: str = Field(default="", alias="targetEnvironment")
+    estimated_duration: int = Field(default=0, alias="estimatedDuration", ge=0, le=1_440)
+    sequential_execution: bool = Field(default=True, alias="sequentialExecution")
 
 
 class WorkflowStepPayload(BaseModel):
-    command_string: str | None = Field(default=None, alias="commandString", max_length=10_000)
-    warning_level: WarningLevel | None = Field(default=None, alias="warningLevel")
-    verification_url: str | None = Field(default=None, alias="verificationUrl", max_length=2_083)
-    verification_expected_response: str | None = Field(default=None, alias="verificationExpectedResponse", max_length=10_000)
+    command_string: str = Field(default="", alias="commandString", max_length=10_000)
+    warning_level: WarningLevel = Field(default=WarningLevel.INFO, alias="warningLevel")
+    verification_url: str = Field(default="", alias="verificationUrl", max_length=2_083)
+    verification_expected_response: str = Field(
+        default="", alias="verificationExpectedResponse", max_length=10_000
+    )
 
 
 class WorkflowStep(BaseModel):
-    id: str = Field(pattern=r"^[a-zA-Z0-9_-]+$")
+    id: str = Field(min_length=1, max_length=100)
     type: StepType
     title: str = Field(min_length=1, max_length=180)
     content: str = Field(min_length=1, max_length=10_000)
-    payload: WorkflowStepPayload | None = None
-    depends_on: list[str] | None = Field(default=None, alias="dependsOn")
+    payload: WorkflowStepPayload = Field(default_factory=WorkflowStepPayload)
+    depends_on: list[str] = Field(default_factory=list, alias="dependsOn")
+
+    @field_validator("id")
+    @classmethod
+    def validate_step_id(cls, step_id: str) -> str:
+        import re
+
+        if not re.match(r"^[a-zA-Z0-9_-]+$", step_id):
+            raise ValueError(
+                "Step ID must contain only alphanumeric characters, dashes, and underscores."
+            )
+        return step_id
 
 
 class WorkflowDsl(BaseModel):
-    version: str = Field(pattern=r"^\d+\.\d+(\.\d+)?$")
+    version: str = Field(min_length=1, max_length=20)
     metadata: WorkflowMetadata
     variables: list[WorkflowVariable] = Field(max_length=50)
     steps: list[WorkflowStep] = Field(min_length=1, max_length=500)
+
+    @field_validator("version")
+    @classmethod
+    def validate_version(cls, version: str) -> str:
+        import re
+
+        if not re.match(r"^\d+\.\d+(\.\d+)?$", version):
+            raise ValueError("Version must be a semantic version string (e.g. 1.0.0).")
+        return version
 
     @field_validator("variables")
     @classmethod
@@ -87,19 +161,21 @@ class WorkflowDsl(BaseModel):
     @classmethod
     def validate_step_dependencies(cls, steps: list[WorkflowStep]) -> list[WorkflowStep]:
         step_ids = {step.id for step in steps}
-        
+
         # 1. Verify all depends_on IDs exist and do not self-reference
         for step in steps:
             if step.depends_on:
                 for parent_id in step.depends_on:
                     if parent_id not in step_ids:
-                        raise ValueError(f"Step '{step.id}' depends on non-existent step '{parent_id}'.")
+                        raise ValueError(
+                            f"Step '{step.id}' depends on non-existent step '{parent_id}'."
+                        )
                     if parent_id == step.id:
                         raise ValueError(f"Step '{step.id}' cannot depend on itself.")
-        
+
         # 2. Check for circular dependencies using DFS
         visited = {}
-        
+
         def has_cycle(node_id: str) -> bool:
             visited[node_id] = 1  # visiting
             step = next(s for s in steps if s.id == node_id)
@@ -118,7 +194,7 @@ class WorkflowDsl(BaseModel):
             if visited.get(step.id, 0) == 0:
                 if has_cycle(step.id):
                     raise ValueError("Circular dependency detected in workflow steps.")
-                    
+
         return steps
 
 
@@ -131,7 +207,7 @@ def migrate_sop_dsl(data: dict) -> dict:
         return data
 
     migrated = dict(data)
-    
+
     # 1. Schema version migration
     if "version" not in migrated or migrated["version"] in (None, "", "0.1", "1.0"):
         migrated["version"] = "1.0.0"
@@ -159,7 +235,7 @@ def migrate_sop_dsl(data: dict) -> dict:
                 new_step = dict(step)
                 if "dependsOn" not in new_step and "depends_on" in new_step:
                     new_step["dependsOn"] = new_step.pop("depends_on")
-                
+
                 # Payload migration
                 if "payload" in new_step and isinstance(new_step["payload"], dict):
                     new_payload = dict(new_step["payload"])
@@ -167,7 +243,7 @@ def migrate_sop_dsl(data: dict) -> dict:
                         "command_string": "commandString",
                         "warning_level": "warningLevel",
                         "verification_url": "verificationUrl",
-                        "verification_expected_response": "verificationExpectedResponse"
+                        "verification_expected_response": "verificationExpectedResponse",
                     }
                     for snake, camel in mappings.items():
                         if camel not in new_payload and snake in new_payload:

@@ -1,9 +1,10 @@
 import logging
-from flask import Blueprint, g, jsonify, request
+
+from flask import Blueprint, jsonify, request
 from pydantic import BaseModel, Field
-from openai import OpenAI
+
 from ..auth import require_auth
-from ..config import Settings
+from ..config import Settings, get_api_keys, get_llm_client_and_model
 
 logger = logging.getLogger(__name__)
 component_bp = Blueprint("component", __name__)
@@ -15,7 +16,9 @@ class ComponentGenerateRequest(BaseModel):
 
 class ComponentGenerationResponse(BaseModel):
     code: str = Field(description="The complete standalone TSX component code.")
-    component_name: str = Field(alias="componentName", description="The component name in PascalCase.")
+    component_name: str = Field(
+        alias="componentName", description="The component name in PascalCase."
+    )
 
 
 COMPONENT_SYSTEM_PROMPT = """
@@ -30,14 +33,16 @@ Strict Guidelines:
    - Use standard React Hooks (useState, useEffect, useMemo, etc.) if needed.
 2. TAILWIND CSS STYLING:
    - Use Tailwind CSS utility classes for styling.
-   - The UI should feel premium, match modern developer tools, and adjust to dark/light themes. Use theme color classes or neutral tailwind colors.
+   - The UI should feel premium, match modern developer tools, and adjust to dark/light
+     themes. Use theme color classes or neutral tailwind colors.
 3. SAFE IMPORTS ONLY:
    - You can only import from:
      - 'react' (e.g. useState, useEffect, etc.)
      - 'lucide-react' (icons)
    - Do NOT import from other libraries.
 4. ISOLATED OPERATION:
-   - The component must be self-contained and perform its logic (e.g. parsing, selecting, charting) locally.
+   - The component must be self-contained and perform its logic (e.g. parsing,
+     selecting, charting) locally.
    - It must accept no external props other than optionally basic styling variables.
 5. NO WRAPPERS OR SCRIPTS:
    - Do not include HTML/body/head tags.
@@ -58,28 +63,42 @@ def generate_component():
     if not api_key:
         return jsonify(error="Config Error", message="OpenAI API key is missing in config."), 500
 
-    client = OpenAI(api_key=api_key)
+    keys = get_api_keys(api_key)
+    if not keys:
+        return jsonify(error="Config Error", message="No valid API keys found in config."), 500
 
-    try:
-        completion = client.beta.chat.completions.parse(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": COMPONENT_SYSTEM_PROMPT},
-                {"role": "user", "content": f"Generate a component for: {payload.prompt}"},
-            ],
-            response_format=ComponentGenerationResponse,
-            temperature=0.2,
-        )
+    last_error = None
+    for key in keys:
+        try:
+            client, model_name = get_llm_client_and_model(key)
+            completion = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": COMPONENT_SYSTEM_PROMPT},
+                    {"role": "user", "content": f"Generate a component for: {payload.prompt}"},
+                ],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "ComponentGenerationResponse",
+                        "schema": ComponentGenerationResponse.model_json_schema(),
+                    },
+                },
+                temperature=0.2,
+            )
 
-        parsed_response = completion.choices[0].message.parsed
-        if not parsed_response:
-            return jsonify(error="Generation Error", message="Failed to parse component code."), 500
+            content = completion.choices[0].message.content
+            if not content:
+                raise RuntimeError("Failed to generate component response.")
 
-        return jsonify(
-            code=parsed_response.code,
-            componentName=parsed_response.component_name
-        )
+            parsed_response = ComponentGenerationResponse.model_validate_json(content)
+            return jsonify(code=parsed_response.code, componentName=parsed_response.component_name)
 
-    except Exception as e:
-        logger.exception("Error during LLM component generation")
-        return jsonify(error="Internal Error", message=str(e)), 500
+        except Exception as e:
+            logger.warning(f"Component generation failed with key starting with {key[:10]}...: {e}")
+            last_error = e
+
+    logger.exception("Error during LLM component generation (all keys exhausted)")
+    return jsonify(
+        error="Internal Error", message=f"All keys exhausted. Last error: {str(last_error)}"
+    ), 500
